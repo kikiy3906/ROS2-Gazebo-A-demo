@@ -32,10 +32,11 @@ struct CompareNodes {
 //定义三维网格地图
 using GridMap3D = std::vector<std::vector<std::vector<int>>>;
 
-
+//定义地图大小
 const int MAX_X = 20;
 const int MAX_Y = 20;
 const int MAX_Z = 20;
+//寻路算法
 std::vector<MapNode*> astar(const GridMap3D& map,MapNode* start, MapNode* goal){
     std::priority_queue<MapNode*,std::vector<MapNode*>,CompareNodes> open_list;
     std::vector<std::vector<std::vector<bool>>> closed_list(MAX_X,std::vector<std::vector<bool>>(MAX_Y,std::vector<bool>(MAX_Z,false)));
@@ -105,14 +106,16 @@ public:
         // 订阅者（获取当前位置）
         local_position_subscriber_ = this->create_subscription<px4_msgs::msg::VehicleLocalPosition>(
             "/fmu/out/vehicle_local_position_v1", qos, 
-            std::bind(&AstarNode::position_callback, this, std::placeholders::_1));
+            [this](const px4_msgs::msg::VehicleLocalPosition::SharedPtr msg) {
+                position_callback(msg);
+            });
 
 
         
        
 
         // 创建10Hz的定时器，Offboard模式要求发送频率不低于2Hz
-        timer_ = this->create_wall_timer(100ms, std::bind(&AstarNode::timer_callback, this));
+        timer_ = this->create_wall_timer(100ms, [this]() { timer_callback(); });
         
         RCLCPP_INFO(this->get_logger(), "飞行节点已启动，准备起飞...");
     }
@@ -276,7 +279,7 @@ for (int x = 0; x < 20; x++) {
         path_planned_ = true;
     }
     void arm() {
-        publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);
+        publish_vehicle_command(px4_msgs::msg::VehicleCommand::VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0);// 1.0 表示解锁，0.0 表示上锁
         RCLCPP_INFO(this->get_logger(), "发送解锁指令 (Arming)");
     }
 
@@ -314,14 +317,14 @@ for (int x = 0; x < 20; x++) {
     }
     void publish_vehicle_command(uint16_t command, float param1 = 0.0, float param2 = 0.0) {
         px4_msgs::msg::VehicleCommand msg{};
-        msg.param1 = param1;
-        msg.param2 = param2;
-        msg.command = command;
-        msg.target_system = 1;
+        msg.param1 = param1;// 参数1，含义随命令不同而变化
+        msg.param2 = param2;// 参数2
+        msg.command = command;// 命令ID（来自MAVLink标准）
+        msg.target_system = 1;// 目标组件ID（通常是1）
         msg.target_component = 1;
         msg.source_system = 1;
         msg.source_component = 1;
-        msg.from_external = true;
+        msg.from_external = true;// 表示来自外部（如ROS2节点）
         msg.timestamp = this->get_clock()->now().nanoseconds() / 1000;
         vehicle_command_publisher_->publish(msg);
     }
@@ -351,7 +354,7 @@ std::array<float, 3> grid_origin_world_{};    // 网格(0,0,0)对应的世界坐
 
 int main(int argc, char *argv[]) {
     std::cout << "Starting Square Flight Node..." << std::endl;
-    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);// 取消 stdout 的缓冲，确保日志实时输出
     rclcpp::init(argc, argv);
     rclcpp::spin(std::make_shared<AstarNode>());
     rclcpp::shutdown();
